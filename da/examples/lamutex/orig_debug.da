@@ -1,0 +1,105 @@
+import sys
+import pdb
+import time
+from .debugger import Controller
+from .debugger import ForkedPdb
+config(channel is fifo, clock is lamport)
+
+class P(process):
+    def setup(s:set, nrequests:int, controller_ps):  # s is set of all other processes
+        self.q = set()
+        self.controller_ps = controller_ps
+
+    def debug():
+        send(('debug_req', self), to= self.controller_ps)
+        if await(each(c in controller_ps, has=received(('debug', c)))):
+            output('Debug recieved by process: ', self.controller_ps)
+            ForkedPdb().set_trace()
+        elif each(c in controller_ps, has=received(('continue', c))):
+            output('continue_ack received by controller')
+
+    def mutex(task):
+        -- request
+        c = logical_clock()
+        send(('request', c, self), to= s)
+        q.add(('request', c, self))
+        await(each(('request', c2, p) in q,
+                   has= (c2, p)==(c, self) or (c, self) < (c2, p)) and
+              each(p in s, has= some(received(('ack', c2, _p)), has= c2 > c)))
+        -- critical_section
+        task()
+        -- release
+        q.remove(('request', c, self))
+        send(('release', logical_clock(), self), to= s)
+
+    def receive(msg= ('request', c2, p)):
+        q.add(('request', c2, p))
+        send(('ack', logical_clock(), self), to= p)
+
+    def receive(msg= ('release', _, p)):
+#        q.remove(('request', _, p))  # pattern matching needed for _
+#        q.remove(anyof(setof(('request', c, p), ('request', c, _p) in q)))
+        for x in setof(('request', c, p), ('request', c, _p) in q):
+            q.remove(x)
+            break
+#        for ('request', c, _p) in q: q.remove('request', c, p); break
+#        for (tag, c, p2) in q:
+#            if tag == 'request' and p2 == p:
+#                q.remove((tag, c, p2)); break
+        
+
+    def run():          
+        debug()
+
+        def task():
+            output('in cs')
+        for i in range(nrequests):
+            mutex(task)
+        
+        send(('done', self), to= parent())
+        await(received(('done',), from_=parent()))
+        output('terminating')
+
+def debug_ask(ps, controller_ps):
+    pids = input("Enter the index the pids to debug (comma seperated): " + str(ps));
+    int_pids = set()
+    for pid in pids.split(','):
+        int_pids.add(int(pid))
+    
+    debug_ps = set()
+    for i in range(len(ps)):
+        if i in int_pids:
+            debug_ps.add(list(ps)[i])
+    print('Debug Set: ', debug_ps)
+    return debug_ps
+
+
+def main():
+    nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
+    nrequests = int(sys.argv[2]) if len(sys.argv) > 2 else 1
+    ps = new(P, num=nprocs)
+    controller_ps = new(Controller, num=1)
+
+    for p in ps:
+        setup(p, (ps-{p}, nrequests, controller_ps))
+
+    debug_ps = debug_ask(ps, controller_ps)
+
+    for c in controller_ps: 
+        setup(c, (ps,debug_ps,))
+
+    start(controller_ps)
+    start(ps)
+    await(each(p in ps, has=received(('done', p))))
+    send('done_controller', to= controller_ps)
+    send(('done',), to=ps)    
+
+# This is an executable specification of the algorithm described in
+# Lamport, L. (1978). "Time, clocks, and the ordering of events in a
+# distributed system".  Communications of the ACM, 21(7):558-565.
+
+# This code includes setup and termination for serving a given number of
+# requests per process.
+
+# All labels are not needed,
+# leaving 14 or 15 lines total for the algorithm body and message handlers.

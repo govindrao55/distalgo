@@ -1,0 +1,51 @@
+import sys
+import time
+import pdb
+import os
+
+config(channel is fifo, clock is lamport)
+
+class ForkedPdb(pdb.Pdb):
+    _original_stdin_fd = sys.stdin.fileno()
+    _original_stdin = None
+
+    def __init__(self):
+        pdb.Pdb.__init__(self, nosigint=True)
+
+    def _cmdloop(self):
+        current_stdin = sys.stdin
+        try:
+            if not self._original_stdin:
+                self._original_stdin = os.fdopen(self._original_stdin_fd)
+            sys.stdin = self._original_stdin
+            self.cmdloop()
+        finally:
+            sys.stdin = current_stdin
+
+
+class Controller(process):
+    def setup(ps:set, debug_ps:set):  # s is set of all other processes
+        self.ps = ps
+        self.debug_ps = debug_ps
+            
+    def receive(msg= ('debug_req', p)):
+        #await(each(p in ps, has=received(('debug', p))))
+        output('Controller: debug recieved: ', p)
+        send(('continue', self), to=ps - debug_ps)
+        send(('debug', self), to=debug_ps)
+        
+    def run():
+        output('Controller process started')
+        output('Process set:', self.ps)
+        await(received(('done_controller'), from_=parent()))
+        output('terminating Controller')
+
+# This is an executable specification of the algorithm described in
+# Lamport, L. (1978). "Time, clocks, and the ordering of events in a
+# distributed system".  Communications of the ACM, 21(7):558-565.
+
+# This code includes setup and termination for serving a given number of
+# requests per process.
+
+# All labels are not needed,
+# leaving 14 or 15 lines total for the algorithm body and message handlers.
