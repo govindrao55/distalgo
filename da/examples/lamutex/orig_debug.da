@@ -1,21 +1,21 @@
 import sys
 import pdb
 import time
-from .debugger import Controller
+from .debugger import Debugger
 from .debugger import ForkedPdb
 config(channel is fifo, clock is lamport)
 
 class P(process):
-    def setup(s:set, nrequests:int, controller_ps):  # s is set of all other processes
+    def setup(s:set, nrequests:int, debugger_ps):  # s is set of all other processes
         self.q = set()
-        self.controller_ps = controller_ps
+        self.debugger_ps = debugger_ps
 
     def debug():
-        send(('debug_req', self), to= self.controller_ps)
-        if await(each(c in controller_ps, has=received(('debug', c)))):
-            output('Debug recieved by process: ', self.controller_ps)
+        send(('debug_req', self), to= self.debugger_ps)
+        if await(each(c in debugger_ps, has=received(('debug', c)))):
+            output('Debug recieved by process: ', self.debugger_ps)
             ForkedPdb().set_trace()
-        elif each(c in controller_ps, has=received(('continue', c))):
+        elif each(c in debugger_ps, has=received(('continue', c))):
             output('continue_ack received by controller')
 
     def mutex(task):
@@ -60,7 +60,7 @@ class P(process):
         await(received(('done',), from_=parent()))
         output('terminating')
 
-def debug_ask(ps, controller_ps):
+def debug_ask(ps, debugger_ps):
     pids = input("Enter the index the pids to debug (comma seperated): " + str(ps));
     int_pids = set()
     for pid in pids.split(','):
@@ -78,20 +78,20 @@ def main():
     nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     nrequests = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     ps = new(P, num=nprocs)
-    controller_ps = new(Controller, num=1)
+    debugger_ps = new(Debugger, num=1)
 
     for p in ps:
-        setup(p, (ps-{p}, nrequests, controller_ps))
+        setup(p, (ps-{p}, nrequests, debugger_ps))
 
-    debug_ps = debug_ask(ps, controller_ps)
+    debug_ps = debug_ask(ps, debugger_ps)
 
-    for c in controller_ps: 
+    for c in debugger_ps:
         setup(c, (ps,debug_ps,))
 
-    start(controller_ps)
+    start(debugger_ps)
     start(ps)
     await(each(p in ps, has=received(('done', p))))
-    send('done_controller', to= controller_ps)
+    send('done', to= debugger_ps)
     send(('done',), to=ps)    
 
 # This is an executable specification of the algorithm described in
