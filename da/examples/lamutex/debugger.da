@@ -24,17 +24,39 @@ class ForkedPdb(pdb.Pdb):
 
 
 class Debugger(process):
-    def setup(ps:set, debug_ps:set):  # debug_ps is set of all processes to be debugged
+    def setup(ps:set):  # debug_ps is set of all processes to be debugged
         self.ps = ps
-        self.debug_ps = debug_ps
+        self.debug_ps = set()
             
-    def receive(msg= ('debug_req', p)):
-        output('debug recieved: ', p)
-        send(('continue', self), to=ps - debug_ps)
-        send(('debug', self), to=debug_ps)
+    def receive(msg= ('debug_req', i, p)):
+        output('debug recieved1: ', p)
+        output('debugger'   ,i)
+        send(('continue'+str(i), self), to=ps - debug_ps)
+        send(('debug'+str(i), self), to=debug_ps)
+
+    def receive(msg= ('debug_pid', p)):
+        output('debug recieved2: ', p)
+        self.debug_ps=p
+        output('debug recieved3: ', self.debug_ps)       
         
     def run():
         output('process started')
         output('Process set:', self.ps)
         await(received(('done'), from_=parent()))
         output('terminating Controller')
+
+class Helper:
+
+    def debug_ask(self,ps:set):
+        print(ps)
+        pids = input("Enter the index the pids to debug (comma seperated): " + str(ps));
+        int_pids = set()
+        for pid in pids.split(','):
+            int_pids.add(int(pid))
+        
+        debug_ps=set()
+        for i in range(len(ps)):
+            if i in int_pids:
+                debug_ps.add(list(ps)[i])
+        print('Debug Set: ', debug_ps)
+        return debug_ps

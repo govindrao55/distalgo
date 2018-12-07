@@ -2,24 +2,30 @@ import sys
 import pdb
 import time
 from .debugger import Debugger
+from .debugger import Helper
 from .debugger import ForkedPdb
 config(channel is fifo, clock is lamport)
 
 class P(process):
     def setup(s:set, nrequests:int, debugger_ps):  # s is set of all other processes
+        #ForkedPdb().set_trace()
         self.q = set()
         self.debugger_ps = debugger_ps
+        self.i = 0
 
     def debug():
-        send(('debug_req', self), to= self.debugger_ps)
-        if await(each(c in debugger_ps, has=received(('debug', c)))):
-            output('Debug recieved by process: ', self.debugger_ps)
+        output('sending ' + 'debug_input'+ str(self.i) + "  ", self)
+        send(('debug_input'+ str(self.i), self), to= parent())
+        await(received(('print'+str(self.i),), from_=parent()))
+        send(('debug_req', self.i, self), to= self.debugger_ps)
+        if await(each(c in debugger_ps, has=received(('debug'+str(self.i), c)))):
             ForkedPdb().set_trace()
-        elif each(c in debugger_ps, has=received(('continue', c))):
-            output('continue_ack received by controller')
+        elif each(c in debugger_ps, has=received(('continue'+str(self.i), c))):
+            output('continue_ack received by process')
+        self.i = self.i + 1
 
     def mutex(task):
-        -- request
+        -- request 
         c = logical_clock()
         send(('request', c, self), to= s)
         q.add(('request', c, self))
@@ -37,62 +43,55 @@ class P(process):
         send(('ack', logical_clock(), self), to= p)
 
     def receive(msg= ('release', _, p)):
-#        q.remove(('request', _, p))  # pattern matching needed for _
-#        q.remove(anyof(setof(('request', c, p), ('request', c, _p) in q)))
         for x in setof(('request', c, p), ('request', c, _p) in q):
             q.remove(x)
             break
-#        for ('request', c, _p) in q: q.remove('request', c, p); break
-#        for (tag, c, p2) in q:
-#            if tag == 'request' and p2 == p:
-#                q.remove((tag, c, p2)); break
-        
 
-    def run():          
-        debug()
-
+    def run():
+        self.debug()
         def task():
             output('in cs')
+        self.debug()
         for i in range(nrequests):
             mutex(task)
-        
         send(('done', self), to= parent())
         await(received(('done',), from_=parent()))
         output('terminating')
-
-def debug_ask(ps, debugger_ps):
-    pids = input("Enter the index the pids to debug (comma seperated): " + str(ps));
-    int_pids = set()
-    for pid in pids.split(','):
-        int_pids.add(int(pid))
-    
-    debug_ps = set()
-    for i in range(len(ps)):
-        if i in int_pids:
-            debug_ps.add(list(ps)[i])
-    print('Debug Set: ', debug_ps)
-    return debug_ps
-
 
 def main():
     nprocs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     nrequests = int(sys.argv[2]) if len(sys.argv) > 2 else 1
     ps = new(P, num=nprocs)
+
     debugger_ps = new(Debugger, num=1)
 
     for p in ps:
         setup(p, (ps-{p}, nrequests, debugger_ps))
-
-    debug_ps = debug_ask(ps, debugger_ps)
-
+    
     for c in debugger_ps:
-        setup(c, (ps,debug_ps,))
-
+        setup(c, (ps,))
     start(debugger_ps)
+    debug_state = 0
     start(ps)
-    await(each(p in ps, has=received(('done', p))))
-    send('done', to= debugger_ps)
-    send(('done',), to=ps)    
+    
+    h = Helper()
+    while True:
+        output('expecting ' +'debug_input'+str(debug_state)+"  ", self)
+        if(await(each(p in ps, has=received(('debug_input'+str(debug_state), p))))):
+            output('recieved ' +'debug_input'+str(debug_state))
+            debug_ps = h.debug_ask(ps)
+            send(('debug_pid', debug_ps),to= debugger_ps)
+            send(('print'+str(debug_state),), to=ps)
+            debug_state += 1
+        elif(await(each(p in ps, has=received(('done', p))))):
+            break
+
+    
+    send(('done'),to= debugger_ps)
+    send(('done',), to=ps)
+
+
+
 
 # This is an executable specification of the algorithm described in
 # Lamport, L. (1978). "Time, clocks, and the ordering of events in a
